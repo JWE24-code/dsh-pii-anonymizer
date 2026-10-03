@@ -44,6 +44,7 @@
   },
   "scripts": {
     "test": "node --test",
+    "sonar:issues": "node tools/sonar-issues.mjs",
     "prepublishOnly": "npm test"
   },
   "publishConfig": {

@@ -14,13 +14,17 @@ push → CI (tests + coverage + SonarCloud) → 0 issues → GitHub Release → 
   *Analyze* scope for organization `jwe24-code`.
 - The first scan creates the project `JWE24-code_dsh-pii-anonymizer` from
   `sonar-project.properties`; no manual project setup is required.
-- SonarCloud exposes issues for **public** projects without authentication, so
-  the release gate can be checked from anywhere:
+- Check the gate with the project's own tool. It needs a token because an
+  unauthenticated issue query returns an empty result both for a clean project
+  and for one that has never been analyzed (verified: SonarSource's own public
+  projects report `total: 0` anonymously):
 
   ```sh
-  curl -s "https://sonarcloud.io/api/issues/search?componentKeys=JWE24-code_dsh-pii-anonymizer&resolved=false" \
-    | node -p "JSON.parse(require('fs').readFileSync(0)).total"
+  SONAR_TOKEN=... npm run sonar:issues
   ```
+
+  Exit `0` means zero unresolved issues; exit `1` prints them; exit `2` means no
+  token.
 
 ### 2. npm (first release only)
 

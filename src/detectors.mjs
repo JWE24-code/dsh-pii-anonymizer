@@ -19,7 +19,7 @@ const CARD_RE = /\b(?:\d[ -]?){12,18}\d\b/g;
  * groups with an optional 1–4 character tail, which covers every valid IBAN
  * length without letting a trailing word be swallowed; mod-97 does the rest.
  */
-const IBAN_RE = /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){2,7}(?:[ ]?[A-Z0-9]{1,4})?\b/g;
+const IBAN_RE = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b/g;
 /** US Social Security number. */
 const SSN_RE = /\b\d{3}-\d{2}-\d{4}\b/g;
 /** Email address. */
@@ -27,17 +27,28 @@ const EMAIL_RE = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+\b/g;
 /** Dotted-quad IPv4. */
 const IPV4_RE =
   /\b(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}\b/g;
-/** Compressed or full IPv6 (bounded, non-capturing). */
-const IPV6_RE =
-  /\b(?:[0-9A-Fa-f]{1,4}:){2,7}(?:[0-9A-Fa-f]{1,4})?\b|\b::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\b/g;
+/** Full IPv6 form. */
+const IPV6_FULL_RE = /\b(?:[0-9A-Fa-f]{1,4}:){2,7}(?:[0-9A-Fa-f]{1,4})?\b/g;
+/** Compressed `::` IPv6 form. */
+const IPV6_COMPRESSED_RE = /\b::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\b/g;
 /**
  * Phone-shaped run. Intentionally the loosest detector; `validatePhone` rejects
  * dates, versions, and the like after the regex has fired.
  */
 const PHONE_RE = /(?<![\w.])(\(?\+?\d[\d()\s.-]{5,}\d)(?![\w.])/g;
-/** Well-known credential prefixes. */
-const API_KEY_RE =
-  /\b(?:sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})\b/g;
+/**
+ * Well-known credential prefixes, one regex per family. Separate patterns
+ * rather than one large alternation so each stays simple enough for static
+ * analysis to reason about; all share the `API_KEY` type and priority.
+ */
+const API_KEY_PATTERNS = [
+  /\bsk-(?:ant-)?[\w-]{16,}\b/g, // OpenAI / Anthropic
+  /\bAKIA[0-9A-Z]{16}\b/g, // AWS access key id
+  /\bgh[pousr]_\w{20,}\b/g, // GitHub tokens
+  /\bgithub_pat_\w{20,}\b/g, // GitHub fine-grained PAT
+  /\bxox[baprs]-[\w-]{10,}\b/g, // Slack
+  /\bAIza[\w-]{35}\b/g, // Google API key
+];
 
 /** @param {string} raw @returns {boolean} */
 export function luhnValid(raw) {
@@ -89,12 +100,13 @@ export function validatePhone(raw) {
  * rule, and numbers-with-checksums beat the phone rule too.
  */
 export const DETECTORS = [
-  { type: "API_KEY", priority: 0, pattern: API_KEY_RE },
+  ...API_KEY_PATTERNS.map((pattern) => ({ type: "API_KEY", priority: 0, pattern })),
   { type: "IBAN", priority: 1, pattern: IBAN_RE, validate: ibanValid },
   { type: "CREDIT_CARD", priority: 2, pattern: CARD_RE, validate: luhnValid },
   { type: "SSN", priority: 3, pattern: SSN_RE },
   { type: "EMAIL", priority: 4, pattern: EMAIL_RE },
-  { type: "IPV6", priority: 5, pattern: IPV6_RE },
+  { type: "IPV6", priority: 5, pattern: IPV6_FULL_RE },
+  { type: "IPV6", priority: 5, pattern: IPV6_COMPRESSED_RE },
   { type: "IPV4", priority: 6, pattern: IPV4_RE },
   { type: "PHONE", priority: 7, pattern: PHONE_RE, validate: validatePhone },
 ];

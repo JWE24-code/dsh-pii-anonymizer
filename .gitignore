@@ -1,6 +1,7 @@
 node_modules
 *.tgz
 *.tsbuildinfo
+coverage/
 
 # Local end-to-end test artifacts (see tools/mock-provider.mjs)
 tools/requests.jsonl

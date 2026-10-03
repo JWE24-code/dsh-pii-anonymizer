@@ -1,0 +1,77 @@
+name: Publish to npm
+
+# Publishing is triggered by publishing a GitHub Release, not by a push to
+# main. npm rejects a version that already exists, so every push would need a
+# version bump first, and a workflow that bumps for you turns an ordinary merge
+# into a release nobody decided on.
+#
+# Authentication is npm trusted publishing: GitHub's OIDC identity is exchanged
+# for a short-lived publish credential, so there is no long-lived NPM_TOKEN to
+# leak or rotate. Configure it once on npmjs.com (package → Settings → Trusted
+# Publisher) for user `JWE24-code`, repository `dsh-pii-anonymizer`, workflow
+# filename `publish.yml`, environment empty.
+on:
+  release:
+    types: [published]
+  # Manual runs exist for re-running a failed release job and for the dry run
+  # that stops before the registry.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Pack and gate the artifact, but do not publish
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1 on the runner.
+      - run: npm install -g --ignore-scripts npm@12.2.0
+
+      # The release tag and the manifest must agree, or the registry ends up
+      # with a version nobody named.
+      - name: Check the tag matches package.json
+        if: github.event_name == 'release'
+        run: |
+          tag="${{ github.ref_name }}"
+          manifest="$(node -p "require('./package.json').version")"
+          if [ "${tag#v}" != "$manifest" ]; then
+            echo "release tag $tag does not match package.json $manifest" >&2
+            exit 1
+          fi
+
+      # A re-run of an already-published release is a success, not a failure.
+      - name: Is this version already published?
+        id: published
+        run: |
+          name="$(node -p "require('./package.json').name")"
+          version="$(node -p "require('./package.json').version")"
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "already=true" >> "$GITHUB_OUTPUT"
+            echo "$name@$version is already on the registry — nothing to do"
+          else
+            echo "already=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `prepublishOnly` runs the unit tests, so nothing reaches the registry
+      # that has not passed them.
+      - name: Publish
+        if: steps.published.outputs.already == 'false' && inputs.dry-run != true
+        run: npm publish --provenance --access public
+
+      - name: Dry run (gate and pack, publish nothing)
+        if: steps.published.outputs.already == 'false' && inputs.dry-run == true
+        run: |
+          npm test
+          npm pack --dry-run

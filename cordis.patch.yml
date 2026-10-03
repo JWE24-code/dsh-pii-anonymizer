@@ -1,0 +1,10 @@
+# The dsh-pii-anonymizer bundle patch: mounted as one insert over the empty
+# profile root. The row is addressed by id `pii-anonymizer`, so a profile's own
+# `cordis.patch.yml`, the home patch layer, or a `--patch` overlay can replace
+# its config (the last layer to touch the row wins).
+- insert:
+    - id: pii-anonymizer
+      name: 'dsh-pii-anonymizer'
+      config:
+        enabled: true
+        notify: true

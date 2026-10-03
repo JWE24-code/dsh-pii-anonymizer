@@ -1,0 +1,9 @@
+# Ephemeral test overlay: loads the PII anonymizer by absolute source path so it
+# can be exercised without installing the package into a profile.
+- insert:
+    - id: pii-anonymizer
+      name: '/home/joeri/Projects/dsh-pii-anonymizer/src/index.mjs'
+      config:
+        enabled: true
+        notify: true
+        debug: true

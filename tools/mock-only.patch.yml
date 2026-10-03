@@ -1,0 +1,7 @@
+# Test overlay only: route the deepseek adapter at the local mock. The plugin
+# itself comes from the profile bundle, so this must NOT insert it (that would
+# double-mount the row).
+- id: llm-deepseek
+  config:
+    baseURL: 'http://127.0.0.1:8787'
+    apiKeyEnv: 'DSH_E2E_KEY'

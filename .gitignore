@@ -1,0 +1,11 @@
+node_modules
+*.tgz
+*.tsbuildinfo
+
+# Local end-to-end test artifacts (see tools/mock-provider.mjs)
+tools/requests.jsonl
+tools/last-request.json
+tools/new-sessions.txt
+
+# Throwaway harness homes used by the e2e test
+.dsh-scratch/

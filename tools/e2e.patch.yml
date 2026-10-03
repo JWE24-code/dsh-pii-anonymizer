@@ -1,0 +1,14 @@
+# End-to-end test overlay: route the deepseek adapter at a local mock and load
+# the PII anonymizer. Applied with --patch, never written to any profile.
+- id: llm-deepseek
+  config:
+    baseURL: 'http://127.0.0.1:8787'
+    apiKeyEnv: 'DSH_E2E_KEY'
+
+- insert:
+    - id: pii-anonymizer
+      name: 'file:///home/joeri/Projects/dsh-pii-anonymizer/src/index.mjs'
+      config:
+        enabled: true
+        notify: true
+        debug: true

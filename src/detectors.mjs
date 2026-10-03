@@ -75,7 +75,7 @@ export function ibanValid(raw) {
   const rearranged = compact.slice(4) + compact.slice(0, 4);
   let remainder = 0;
   for (const ch of rearranged) {
-    const chunk = ch >= "A" && ch <= "Z" ? String(ch.charCodeAt(0) - 55) : ch;
+    const chunk = ch >= "A" && ch <= "Z" ? String(ch.codePointAt(0) - 55) : ch;
     for (const digit of chunk) remainder = (remainder * 10 + Number(digit)) % 97;
   }
   return remainder === 1;

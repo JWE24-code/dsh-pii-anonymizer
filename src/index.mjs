@@ -55,7 +55,7 @@ export function renderNotice(findings) {
  * @param {{ enabled?: boolean, notify?: boolean, debug?: boolean }} [config]
  */
 export function apply(ctx, config) {
-  const settings = { ...DEFAULTS, ...(config ?? {}) };
+  const settings = { ...DEFAULTS, ...config };
   if (settings.debug) ctx.logger?.info?.("[pii-anonymizer] loaded");
 
   /** @type {WeakMap<object, PiiPseudonymizer>} */

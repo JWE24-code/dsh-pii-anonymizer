@@ -74,8 +74,7 @@ export class PiiPseudonymizer {
  */
 export function anonymizeMessage(message, pseudonymizer) {
   if (
-    !message ||
-    message.role !== "user" ||
+    message?.role !== "user" ||
     message.source?.kind !== "user" ||
     !Array.isArray(message.content)
   ) {
@@ -85,7 +84,7 @@ export function anonymizeMessage(message, pseudonymizer) {
   const findings = [];
   let changed = false;
   const content = message.content.map((block) => {
-    if (block && block.type === "text" && typeof block.text === "string") {
+    if (block?.type === "text" && typeof block.text === "string") {
       const result = pseudonymizer.anonymize(block.text);
       if (result.findings.length > 0) {
         changed = true;

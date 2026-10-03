@@ -3,28 +3,24 @@
 The pipeline is:
 
 ```
-push → CI (tests + coverage + SonarCloud) → 0 issues → GitHub Release → npm → dshfind
+push → SonarCloud Automatic Analysis (0 issues) → CI tests → GitHub Release → npm → dshfind
 ```
 
 ## Prerequisites
 
 ### 1. SonarCloud (blocks all releases)
 
-- The repository needs the **`SONAR_TOKEN`** secret — a SonarCloud token with
-  *Analyze* scope for organization `jwe24-code`.
-- The first scan creates the project `JWE24-code_dsh-pii-anonymizer` from
-  `sonar-project.properties`; no manual project setup is required.
-- Check the gate with the project's own tool. It needs a token because an
-  unauthenticated issue query returns an empty result both for a clean project
-  and for one that has never been analyzed (verified: SonarSource's own public
-  projects report `total: 0` anonymously):
+- Analysis is **Automatic Analysis** on the SonarCloud side: the project is
+  public, so it needs no `SONAR_TOKEN` and no CI step.
+- Check the gate with the project's own tool (no token needed; it confirms the
+  project has actually been analyzed before trusting a clean result):
 
   ```sh
-  SONAR_TOKEN=... npm run sonar:issues
+  npm run sonar:issues
   ```
 
-  Exit `0` means zero unresolved issues; exit `1` prints them; exit `2` means no
-  token.
+  Exit `0` means zero unresolved issues; exit `1` prints them; exit `2` means the
+  project has no analysis yet.
 
 ### 2. npm (first release only)
 

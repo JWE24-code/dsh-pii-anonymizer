@@ -59,3 +59,5 @@ within about a day. Verify with:
 curl -s "https://api.dshfind.com/v1/plugins/JWE24-code/dsh-pii-anonymizer"
 curl -s "https://api.dshfind.com/v1/plugins?owner=JWE24-code"
 ```
+
+<!-- trigger SonarCloud Automatic Analysis -->

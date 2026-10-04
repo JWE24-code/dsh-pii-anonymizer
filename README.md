@@ -9,16 +9,19 @@ A native [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plu
 that puts a **deterministic, one-way PII shield at the start of the agent loop**.
 
 Your prompt is scanned by fixed rules and checksums (never by a model) and every
-detected value is replaced with a stable placeholder before the message is
-committed and sent. The real values live only in process memory — never in the
-session log, never on disk, never on the wire. When something is shielded, a
-local notice tells you.
+detected value is replaced with a stable placeholder in the messages that enter
+the model request. The real values never go to the provider. They do stay on
+this computer: the host app commits your message to the local session log
+exactly as you typed it, before and independently of this shield. When something
+is shielded, a local notice tells you.
 
 ```
 you type:   email a@x.com or call +31 6 1234 5678
 model sees: email [[EMAIL_1]] or call [[PHONE_1]]
 you see:    🔒 PII shield: 2 item(s) anonymized locally (1 EMAIL, 1 PHONE).
             Real values did not leave this computer.
+local log:  the message as typed — raw values remain in the local
+            session log and transcript.
 ```
 
 Anonymization is intentionally **irreversible**: there is no reverse map and no
@@ -29,8 +32,10 @@ restore path, so nothing in the system can put the real values back.
 `agent/pre-step` — the loop's step-admission waterfall
 (`@deepseek-ai/dsh-agent`). A listener calls `next()`, maps the returning
 `decision.messages` through the anonymizer, and returns a decision whose
-`messages` carry the placeholders. That is the last moment before the accepted
-user batch is committed and sent to the provider.
+`messages` carry the placeholders. That is the last moment the messages can be
+replaced before they are committed to the step and sent to the provider. The
+host app has already logged your message as typed by then; this hook rewrites
+only what the model receives.
 
 ### Why a native plugin, not a hook
 
@@ -71,9 +76,13 @@ then span length, then position.
 - per-type ordinals, so tokens read `[[EMAIL_1]]`, `[[PHONE_2]]`, …
 
 There is **no reverse map**. The originals are held only in volatile memory for
-the life of the process, so they cannot be restored by anyone, including this
-plugin. This is a deliberate trade: the shield is safe by construction at the
-cost of the transcript showing placeholders.
+the life of the process, so no one — including this plugin — can map a
+placeholder back to its value. Note the limits of that guarantee: it
+covers only what this plugin keeps. The host app's own session log still
+contains your message as typed, so the raw values remain on local disk,
+protected by the file permissions of `$DSH_HOME` and nothing else. This is a
+deliberate trade: the shield is safe by construction at the cost of the model
+seeing placeholders.
 
 ### Scope
 
@@ -81,6 +90,11 @@ Only **human user messages** (`source.kind === 'user'`) are rewritten.
 Harness-injected context — runtime context, skill catalogs, tool results — is
 left untouched, because it is not the user's prompt and redacting it can clobber
 values the agent legitimately needs (for example a sandbox host IP).
+
+Two consequences follow from that scope. Values already written to the session
+log are not scrubbed there, and raw values can re-enter the model through tool
+results — for example when an agent greps the session log or reads a file that
+contains them. The shield covers your prompt on the way in; nothing else.
 
 ## Configuration
 
@@ -162,7 +176,9 @@ grep -o '\[\[[A-Z_0-9]*\]\]' tools/requests.jsonl | sort -u
 ```
 
 Verified output: the provider received `My email is [[EMAIL_1]] and my IBAN is
-[[IBAN_1]]` plus the `notice`; the raw email and IBAN appear nowhere.
+[[IBAN_1]]` plus the `notice`; the raw email and IBAN appear nowhere in the
+captured provider requests (they do remain in the local session log, as
+documented above).
 
 ## Status
 

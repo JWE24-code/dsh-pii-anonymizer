@@ -1,6 +1,6 @@
 {
   "name": "dsh-pii-anonymizer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Deterministic, one-way PII anonymizer for everything the DeepSeek Harness sends to the model: prompt, system prompt, context, and tool results",
   "type": "module",
   "license": "MIT",
@@ -38,7 +38,8 @@
   },
   "files": [
     "src/**/*.mjs",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=20"

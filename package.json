@@ -1,7 +1,7 @@
 {
   "name": "dsh-pii-anonymizer",
   "version": "0.1.0",
-  "description": "Deterministic, one-way PII anonymizer at the start of the DeepSeek Harness agent loop",
+  "description": "Deterministic, one-way PII anonymizer for everything the DeepSeek Harness sends to the model: prompt, system prompt, context, and tool results",
   "type": "module",
   "license": "MIT",
   "author": "JWE24-code <292770342+JWE24-code@users.noreply.github.com>",
@@ -27,6 +27,7 @@
     ".": "./src/index.mjs",
     "./anonymizer": "./src/anonymizer.mjs",
     "./detectors": "./src/detectors.mjs",
+    "./hooks": "./src/hooks.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },

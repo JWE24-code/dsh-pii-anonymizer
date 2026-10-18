@@ -14,7 +14,8 @@
  */
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const requested = process.argv[2];
 if (!requested) {
@@ -23,7 +24,8 @@ if (!requested) {
 }
 
 const NAME = "dsh-pii-anonymizer";
-const SPEC = "link:/home/joeri/Projects/dsh-pii-anonymizer";
+/** This checkout, wherever it lives (the script sits in `<checkout>/tools`). */
+const SPEC = `link:${resolve(dirname(fileURLToPath(import.meta.url)), "..")}`;
 const BASE = "@deepseek-ai/dsh-base";
 
 const profileName = basename(requested);

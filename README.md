@@ -6,44 +6,53 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A native [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin
-that puts a **deterministic, one-way PII shield at the start of the agent loop**.
+that replaces **detected PII with stable placeholders in what the model is sent**:
+your prompt, the system prompt, runtime context, workspace instructions, recalled
+sessions, relayed agent messages, and tool results.
 
-Your prompt is scanned by fixed rules and checksums (never by a model) and every
-detected value is replaced with a stable placeholder in the messages that enter
-the model request. The real values never go to the provider. They do stay on
-this computer: the host app commits your message to the local session log
-exactly as you typed it, before and independently of this shield. When something
-is shielded, a local notice tells you.
+Detection uses fixed rules and checksums (never a model). Every detected value is
+replaced with a keyed placeholder such as `[[EMAIL_3f9a2c1d]]` before the request
+goes to the provider. The real values do stay on this computer: the host app
+commits your message to the local session log exactly as you typed it, and files
+and tool outputs on disk are not changed.
 
 ```
-you type:   email a@x.com or call +31 6 1234 5678
-model sees: email [[EMAIL_1]] or call [[PHONE_1]]
-you see:    🔒 PII shield: 2 item(s) anonymized locally (1 EMAIL, 1 PHONE).
-            Real values did not leave this computer.
-local log:  the message as typed — raw values remain in the local
-            session log and transcript.
+you type:    email a@x.com or call +31 6 1234 5678
+model sees:  email [[EMAIL_6c1f0a9e]] or call [[PHONE_d24b7c03]]
+             + a notice: "🔒 PII shield: 2 item(s) in this step's input were
+               replaced with placeholders before being sent to the model
+               provider (1 EMAIL, 1 PHONE)."
+local log:   the message as typed — raw values remain in the local session
+             log and transcript.
 ```
 
-Anonymization is intentionally **irreversible**: there is no reverse map and no
-restore path, so nothing in the system can put the real values back.
+The notice is a **user-role message**: it is shown in your transcript *and* the
+model receives it (that is how the harness delivers plugin notices). It carries
+only types and counts — never values or placeholders. Turn it off with
+`notify: false`.
+
+Anonymization is **one-way**: the plugin keeps no value → placeholder table and
+has no restore path, so nothing it holds can put the real values back.
 
 ## Where it hooks
 
-`agent/pre-step` — the loop's step-admission waterfall
-(`@deepseek-ai/dsh-agent`). A listener calls `next()`, maps the returning
-`decision.messages` through the anonymizer, and returns a decision whose
-`messages` carry the placeholders. That is the last moment the messages can be
-replaced before they are committed to the step and sent to the provider. The
-host app has already logged your message as typed by then; this hook rewrites
-only what the model receives.
+Each listener is registered with `prepend: true`, so it is the outermost
+listener of its waterfall and rewrites the final value after every other plugin
+has contributed.
+
+| Hook (package) | What is rewritten |
+| --- | --- |
+| `system-prompt/assemble` (`dsh-system-prompt`) | prompt **section** text (e.g. a terminal app's workspace section), runtime-**context** text, and string prompt **variables**. The agent loop renders the assembled contexts into its `form: "snapshot"` user message, so snapshots (e.g. a memory index) are covered here, and the loop's "has the snapshot changed?" check stays stable. |
+| `agent/pre-step` (`dsh-agent-loop`) | the text blocks of **every** message entering the step, whatever its source: the user prompt, runtime-context snapshots, workspace instructions (`AGENTS.md`), recalled sessions (`recall`), relayed agent messages (`relay`), skill catalogs, and contexts attached by tool results. |
+| `tools/post-execute` (`dsh-tools`) | the tool **result content** the model reads (file reads, grep, shell output, memory reads…), a block decision's feedback, and attached contexts. |
 
 ### Why a native plugin, not a hook
 
 The Claude Code / Codex hook bridges **cannot** do this. `HookOutput` in
 `@deepseek-ai/dsh-hook-protocol` exposes only `additionalContext`; its
 `updatedInput` is documented as *"PARSED but NOT honored."* There is no
-prompt-rewrite channel. Only a native Cordis plugin on `agent/pre-step` can
-replace the messages that enter the model request.
+prompt-rewrite channel. Only a native Cordis plugin can replace the messages,
+prompt, and tool results that enter the model request.
 
 ## Detection scope
 
@@ -69,32 +78,68 @@ then span length, then position.
 
 ## Pseudonymization model
 
-`PiiPseudonymizer` keeps, per session:
+A placeholder is `[[TYPE_<hash>]]`, where `<hash>` is the first 8 hex digits of
+HMAC-SHA256(key, type + normalized value). Normalization folds trivial spelling
+differences (email case, IBAN/card/phone spacing and separators) into one value.
 
-- `forward`: original value → placeholder (stable across turns, so the model can
-  keep referring to `[[EMAIL_1]]` consistently)
-- per-type ordinals, so tokens read `[[EMAIL_1]]`, `[[PHONE_2]]`, …
+- **Stable everywhere.** The same value gets the same placeholder in every
+  session, in subagents, and after a restart, so a placeholder saved into a
+  memory or a note keeps meaning the same thing. Different values get different
+  placeholders (barring a 32-bit truncation collision).
+- **Keyed.** The key is a per-install secret: 32 random bytes in
+  `$DSH_HOME/pii-anonymizer.key` (default `~/.dsh/pii-anonymizer.key`), created
+  on first use with mode `0600` (an existing file with looser permissions is
+  tightened). Without the key, a placeholder cannot be matched against guessed
+  values, which matters for low-entropy values such as phone numbers. Keep the
+  file private; deleting it changes every placeholder from then on. If the file
+  cannot be read or created, the plugin logs a warning and uses a process-only
+  key: values are still replaced, but placeholders are not stable across
+  restarts.
+- **No raw PII on disk.** The key file holds only the random key. The plugin
+  keeps no value table and writes no values anywhere.
+- **Idempotent.** Existing placeholders are never re-detected, so text that has
+  already been rewritten passes through unchanged.
 
-There is **no reverse map**. The originals are held only in volatile memory for
-the life of the process, so no one — including this plugin — can map a
-placeholder back to its value. Note the limits of that guarantee: it
-covers only what this plugin keeps. The host app's own session log still
-contains your message as typed, so the raw values remain on local disk,
-protected by the file permissions of `$DSH_HOME` and nothing else. This is a
-deliberate trade: the shield is safe by construction at the cost of the model
-seeing placeholders.
+## What is and is not covered
 
-### Scope
+Covered (model-facing text):
 
-Only **human user messages** (`source.kind === 'user'`) are rewritten.
-Harness-injected context — runtime context, skill catalogs, tool results — is
-left untouched, because it is not the user's prompt and redacting it can clobber
-values the agent legitimately needs (for example a sandbox host IP).
+- your prompt and every other message entering a step — snapshots, workspace
+  instructions, recall, relay, catalogs, tool-result contexts;
+- system-prompt sections, runtime-context sections, and string prompt variables;
+- tool result content, including errors returned by a tool body.
 
-Two consequences follow from that scope. Values already written to the session
-log are not scrubbed there, and raw values can re-enter the model through tool
-results — for example when an agent greps the session log or reads a file that
-contains them. The shield covers your prompt on the way in; nothing else.
+Not covered:
+
+- **Local storage.** The session log, transcript, memory files, and any file on
+  disk keep the raw values; this shield changes only what is sent to the
+  provider. The raw values are protected by the file permissions of `$DSH_HOME`
+  and nothing else.
+- **Undetectable PII.** Free-form names, postal addresses, and other
+  context-dependent PII are not detected (see *Detection scope*).
+- **A `complete: true` system-prompt section.** `dsh-system-prompt` restores an
+  effective complete section from its pre-waterfall text *after* the
+  `system-prompt/assemble` waterfall, so a plugin cannot rewrite it.
+- **Tool schemas** (tool names, descriptions, parameter schemas) are sent as is.
+- **Tool results that skip `tools/post-execute`.** The registry finalizes a
+  few outcomes without post-execute — cancellations and pipeline failures (for
+  example a throwing `tools/pre-execute` or `tools/execute` listener) — and a
+  tool's own `finalizeContent` callback runs after post-execute. Their text
+  reaches the model unrewritten. Denials, approval rejections, tool errors and
+  successes all pass through post-execute and are covered. A downstream
+  post-execute listener that replaces the result's `value` is left alone (the
+  registry forbids replacing both value and content).
+- **Model output.** The assistant's replies are not rewritten; placeholders are
+  not restored in them.
+- **Requests made outside the agent loop** by other plugins (for example a
+  session-title generator) only see what the loop already rewrote — the title
+  request built from your messages receives the placeholders, but a plugin that
+  reads raw files itself and calls a model directly is outside this shield.
+
+Rewriting injected context can occasionally hide a value the agent genuinely
+needs (for example an IP address in a workspace instruction). Disable the
+system-prompt or tool-result rewrite with `systemPrompt: false` or
+`toolResults: false` if that matters more to you than the coverage.
 
 ## Configuration
 
@@ -102,9 +147,12 @@ contains them. The shield covers your prompt on the way in; nothing else.
 - id: pii-anonymizer
   name: dsh-pii-anonymizer
   config:
-    enabled: true   # master switch
-    notify: true    # emit the local notice when something was shielded
-    debug: false    # log load/shield events (counts only, never values)
+    enabled: true        # master switch
+    notify: true         # add the notice message when a step's input had PII
+    debug: false         # log load/shield events (counts only, never values)
+    systemPrompt: true   # rewrite system prompt + runtime context
+    toolResults: true    # rewrite tool result content
+    keyFile: ''          # empty = $DSH_HOME/pii-anonymizer.key
 ```
 
 ## Installation (as a bundle)
@@ -129,64 +177,73 @@ checkout, and writes a `package.json.bak` beside it:
 node tools/register-profile.mjs ~/.dsh/profiles/tui
 ```
 
-The package must also be resolvable from the profile. On this machine it is
-symlinked into the shared resolution root:
+The package must also be resolvable from the profile, for example by
+symlinking the checkout into the shared resolution root:
 
+```sh
+ln -s "$PWD" ~/.dsh/profiles/node_modules/dsh-pii-anonymizer
 ```
-~/.dsh/profiles/node_modules/dsh-pii-anonymizer -> /home/joeri/Projects/dsh-pii-anonymizer
-```
 
-**Install status:** registered and enabled in all six profiles (`dev-tui`,
-`headless`, `jev-dev`, `tui`, `tui-dev`, `web`). Restart the app to load it.
-
-Rollback per profile: restore its `package.json.bak`.
+Restart the app to load it. Rollback per profile: restore its `package.json.bak`.
 
 ## Development
 
 ```sh
-node --test          # 16 detector + pseudonymizer + message-scope unit tests
+npm test             # node --test: detectors, keyed pseudonymizer, key file, and
+                     # the pre-step / assemble / post-execute rewrites
 ```
 
-`node_modules/@deepseek-ai` is a dev-only symlink into the local harness install
-so `src/index.mjs` resolves its peer dependencies for module-load smoke tests.
-An installed plugin resolves them from the profile instead.
+The unit tests import only `src/detectors.mjs`, `src/anonymizer.mjs` and
+`src/hooks.mjs`, which have no harness dependencies, so CI needs no install.
+`src/index.mjs` imports the harness peers; for local module-load smoke tests,
+symlink `node_modules/@deepseek-ai` to the `@deepseek-ai` directory of your
+harness install. An installed plugin resolves them from the profile instead.
 
 ### End-to-end test (no credentials, no network)
 
 `tools/mock-provider.mjs` is a tiny OpenAI-compatible SSE server; `tools/e2e.patch.yml`
 routes the deepseek adapter at it and loads this plugin. A real harness loop then
 runs against the mock, and `tools/requests.jsonl` records exactly what the
-provider received.
+provider received. With `MOCK_READ_FILE` set, the mock first asks the agent to
+`read` that file, so the tool-result path is exercised too.
 
 ```sh
-# 1. throwaway harness home inside this project (never ~/.dsh)
-DSH_HOME=$PWD/../.dsh-scratch dsh --profile pitest \
-  --from-default-profile headless --dump-config
+# 1. throwaway harness home (never ~/.dsh), with this checkout resolvable
+export DSH_HOME=$(mktemp -d)
+dsh --profile pitest --from-default-profile headless --dump-config >/dev/null
+ln -s "$PWD" "$DSH_HOME/profiles/node_modules/dsh-pii-anonymizer"
 
-# 2. mock provider
-node tools/mock-provider.mjs &          # writes tools/requests.jsonl
+# 2. a scratch workspace with PII in an instruction file and a data file
+WORK=$(mktemp -d) && git -C "$WORK" init -q
+echo 'Owner: owner@corp.example'                 > "$WORK/AGENTS.md"
+echo 'customer: c@corp.example +31 6 9876 5432'  > "$WORK/notes.txt"
 
-# 3. one real turn
-DSH_HOME=$PWD/../.dsh-scratch DSH_E2E_KEY=dummy \
-  dsh --profile pitest --patch tools/e2e.patch.yml \
-  "My email is jane.doe@corp.example and my IBAN is DE89 3704 0044 0532 0130 00"
+# 3. mock provider
+MOCK_READ_FILE="$WORK/notes.txt" node tools/mock-provider.mjs &
 
-# 4. confirm the provider only ever saw placeholders
-grep -o '\[\[[A-Z_0-9]*\]\]' tools/requests.jsonl | sort -u
+# 4. one real turn
+(cd "$WORK" && DSH_E2E_KEY=dummy dsh --profile pitest \
+  --patch "$OLDPWD/tools/e2e.patch.yml" "My email is jane.doe@corp.example; read notes.txt")
+
+# 5. confirm the provider only ever saw placeholders
+grep -c 'corp.example' tools/requests.jsonl      # expect 0
+grep -o '\[\[[A-Z_]*_[0-9a-f]*\]\]' tools/requests.jsonl | sort | uniq -c
 ```
 
-Verified output: the provider received `My email is [[EMAIL_1]] and my IBAN is
-[[IBAN_1]]` plus the `notice`; the raw email and IBAN appear nowhere in the
-captured provider requests (they do remain in the local session log, as
-documented above).
+Verified: across the agent requests and the session-title request, the
+provider received placeholders for the prompt email, the `AGENTS.md` email
+(workspace instructions), and the email and phone in the `read` tool result;
+no `corp.example` value appeared. A second run with the same `DSH_HOME`
+produced the identical placeholders, and the runtime-context snapshot was sent
+once, not re-sent every step. The raw values do remain in the local session
+log, as documented above.
 
 ## Status
 
 - [x] Deterministic detectors with checksum validation
-- [x] Per-session stable pseudonymization (one-way, no reverse map)
-- [x] Human-message scoping (injected context left intact)
-- [x] `agent/pre-step` wiring — unit-simulated **and** run through a real
-      headless harness against a mock provider
-- [x] Local `notice` to the user
-- [x] Installed as a bundle in all six profiles, listed and enabled in the
-      `/plugins` picker
+- [x] Keyed, cross-session stable placeholders (one-way, no reverse map)
+- [x] User prompt and all injected messages (snapshot, instructions, recall,
+      relay, catalogs, tool contexts) via `agent/pre-step`
+- [x] System prompt, runtime context and variables via `system-prompt/assemble`
+- [x] Tool result content via `tools/post-execute`
+- [x] Run through a real headless harness against a mock provider

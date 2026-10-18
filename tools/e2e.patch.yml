@@ -1,5 +1,9 @@
 # End-to-end test overlay: route the deepseek adapter at a local mock and load
 # the PII anonymizer. Applied with --patch, never written to any profile.
+#
+# The plugin is loaded by package name, so the checkout must be resolvable from
+# the scratch home first (see README, "End-to-end test"):
+#   ln -s "$PWD" "$DSH_HOME/profiles/node_modules/dsh-pii-anonymizer"
 - id: llm-deepseek
   config:
     baseURL: 'http://127.0.0.1:8787'
@@ -7,7 +11,7 @@
 
 - insert:
     - id: pii-anonymizer
-      name: 'file:///home/joeri/Projects/dsh-pii-anonymizer/src/index.mjs'
+      name: 'dsh-pii-anonymizer'
       config:
         enabled: true
         notify: true

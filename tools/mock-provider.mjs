@@ -13,6 +13,8 @@ const CAPTURE =
   new URL("./last-request.json", import.meta.url).pathname;
 const LOG =
   process.env.MOCK_LOG ?? new URL("./requests.jsonl", import.meta.url).pathname;
+/** Absolute path the mock asks the agent to `read` once (optional). */
+const READ_FILE = process.env.MOCK_READ_FILE;
 
 const server = http.createServer((req, res) => {
   if (req.method !== "POST") {
@@ -63,8 +65,23 @@ const server = http.createServer((req, res) => {
       choices: [{ index: 0, delta, finish_reason: finish }],
     });
     res.write(`data: ${JSON.stringify(chunk({ role: "assistant" }))}\n\n`);
-    res.write(`data: ${JSON.stringify(chunk({ content: "OK" }))}\n\n`);
-    res.write(`data: ${JSON.stringify(chunk({}, "stop"))}\n\n`);
+    // With MOCK_READ_FILE set, the first agent request asks for one `read`
+    // call of that file, so the tool-result path is exercised too.
+    const offersRead = (parsed?.tools ?? []).some((tool) => tool.function?.name === "read");
+    const hasToolResult = messages.some((message) => message.role === "tool");
+    if (READ_FILE && offersRead && !hasToolResult) {
+      const call = {
+        index: 0,
+        id: "call_1",
+        type: "function",
+        function: { name: "read", arguments: JSON.stringify({ file_path: READ_FILE }) },
+      };
+      res.write(`data: ${JSON.stringify(chunk({ tool_calls: [call] }))}\n\n`);
+      res.write(`data: ${JSON.stringify(chunk({}, "tool_calls"))}\n\n`);
+    } else {
+      res.write(`data: ${JSON.stringify(chunk({ content: "OK" }))}\n\n`);
+      res.write(`data: ${JSON.stringify(chunk({}, "stop"))}\n\n`);
+    }
     res.write("data: [DONE]\n\n");
     res.end();
   });

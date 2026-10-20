@@ -24,3 +24,68 @@ jobs:
       # The unit tests import only the dependency-free detector and
       # pseudonymizer modules, so no install is needed to run them.
       - run: node --test
+
+  # A plugin that lists `@deepseek-ai/*` under `dependencies` installs an old
+  # core copy into the profile, which shadows the in-box one (upstream #10364).
+  # Harness packages must stay (optional) peers.
+  deps-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No @deepseek-ai/* in dependencies
+        run: |
+          node -e '
+            const deps = Object.keys(require("./package.json").dependencies ?? {});
+            const bad = deps.filter((n) => n.startsWith("@deepseek-ai/"));
+            if (bad.length > 0) {
+              console.error("::error::@deepseek-ai/* must be peerDependencies, not dependencies: " + bad.join(", "));
+              process.exit(1);
+            }
+          '
+
+  # Install the packed package into a fresh profile the way users do
+  # (`dsh plugin add`), on the newest Harness dist-tags. The profile must boot
+  # far enough to compose its config, and no `@deepseek-ai/*` copy may land in
+  # the profile's node_modules: such a copy shadows the in-box core and breaks
+  # startup (deepseek-harness discussions #10364, #10338).
+  install-smoke:
+    name: install smoke (dsh@${{ matrix.dsh }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: [latest, next]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # `dsh plugin` forwards to pnpm, which must be on PATH.
+      - run: npm install -g --ignore-scripts @deepseek-ai/dsh@${{ matrix.dsh }} pnpm # NOSONAR — deliberately tracks the newest published Harness and pnpm.
+      - name: Pack this package
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          file=$(npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/pack" --json | jq -r '.[0].filename')
+          echo "TARBALL=$RUNNER_TEMP/pack/$file" >> "$GITHUB_ENV"
+          echo "DSH_HOME=$RUNNER_TEMP/dsh-home" >> "$GITHUB_ENV"
+      - name: dsh plugin add
+        run: |
+          dsh --version
+          dsh plugin --profile t add "$TARBALL" 2>&1 | tee "$RUNNER_TEMP/add.log"
+      - name: Profile composes
+        run: dsh --profile t --dump-config > /dev/null
+      - name: No @deepseek-ai/* in the profile
+        run: |
+          dir="$DSH_HOME/profiles/t/node_modules/@deepseek-ai"
+          if [ -d "$dir" ] && [ -n "$(ls -A "$dir")" ]; then
+            echo "::error::@deepseek-ai/* installed into the profile:"
+            ls -A "$dir"
+            exit 1
+          fi
+      - name: No peer-dependency warning
+        run: |
+          if grep -q 'Issues with peer dependencies' "$RUNNER_TEMP/add.log"; then
+            (cd "$DSH_HOME/profiles/t" && pnpm peers check) || true
+            echo "::error::dsh plugin add reported peer-dependency issues"
+            exit 1
+          fi

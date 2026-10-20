@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-10-20
+
+### Changed
+
+- Every `@deepseek-ai/*` peer dependency is now optional
+  (`peerDependenciesMeta`), the way `moqi-tui` declares them. The Harness
+  provides these packages in-box, and DeepSeek Harness 0.2.1 profiles set
+  `autoInstallPeers: false`, so `dsh plugin add` no longer prints
+  `Issues with peer dependencies found`.
+
+### Added
+
+- CI guard that fails if any `@deepseek-ai/*` package appears under
+  `dependencies`, which would put a stale core copy into the profile and
+  shadow the in-box one.
+- CI `install-smoke` job: installs `@deepseek-ai/dsh` at `latest` and `next`,
+  runs `dsh plugin --profile t add` with the packed package in a fresh
+  `DSH_HOME`, and checks that `dsh --profile t --dump-config` succeeds and that
+  no `@deepseek-ai/*` copy lands in the profile.
+
 ## [0.2.0] - 2026-10-18
 
 ### Changed
@@ -63,5 +83,6 @@ Local storage (session log, transcript, memory files) keeps the raw values.
 - Initial release: deterministic, one-way PII anonymization of the user's
   prompt for the DeepSeek Harness.
 
+[0.2.1]: https://github.com/JWE24-code/dsh-pii-anonymizer/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/JWE24-code/dsh-pii-anonymizer/releases/tag/v0.2.0
 [0.1.0]: https://www.npmjs.com/package/dsh-pii-anonymizer/v/0.1.0

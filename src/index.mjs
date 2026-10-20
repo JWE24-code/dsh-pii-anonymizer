@@ -33,9 +33,7 @@ import {
   renderNotice,
 } from "./hooks.mjs";
 
-export { renderNotice } from "./hooks.mjs";
-
-export const name = PLUGIN_NAME;
+export { PLUGIN_NAME as name, renderNotice } from "./hooks.mjs";
 
 /** Schemastery schema for this plugin's `config:` block. */
 export const Config = z.object({

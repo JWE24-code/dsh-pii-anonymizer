@@ -83,7 +83,7 @@ export function normalizeValue(type, value) {
  */
 export function defaultKeyPath(env = process.env) {
   const fromEnv = env.DSH_HOME?.trim();
-  const home = fromEnv ? fromEnv : join(homedir(), ".dsh");
+  const home = fromEnv || join(homedir(), ".dsh");
   return join(home, KEY_FILE_NAME);
 }
 

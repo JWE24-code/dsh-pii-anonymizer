@@ -1,6 +1,6 @@
 {
   "name": "dsh-pii-anonymizer",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Deterministic, one-way PII anonymizer for everything the DeepSeek Harness sends to the model: prompt, system prompt, context, and tool results",
   "type": "module",
   "license": "MIT",

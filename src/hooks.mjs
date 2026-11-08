@@ -21,9 +21,24 @@ import { anonymizeContent, anonymizeMessage } from "./anonymizer.mjs";
 /** Plugin name; also how this plugin recognises its own notice message. */
 export const PLUGIN_NAME = "pii-anonymizer";
 
+/**
+ * Source attached to the notice message. Harness 0.2.2 (session format v4)
+ * refuses the retired catch-all `{ kind: "plugin", plugin }` wrapper: every
+ * durable message must carry its producer's own kind, or the session write
+ * throws "format v4 message requires a producer-owned source kind" and the
+ * turn dies.
+ */
+export const NOTICE_SOURCE_KIND = PLUGIN_NAME;
+
+/** Kind the Harness v3→v4 session converter gives notices written by 0.2.0. */
+const CONVERTED_SOURCE_KIND = `plugin:${PLUGIN_NAME}`;
+
 /** @param {{ source?: { kind?: string, plugin?: string } }} message */
-function isOwnMessage(message) {
-  return message?.source?.kind === "plugin" && message.source.plugin === PLUGIN_NAME;
+export function isOwnMessage(message) {
+  const kind = message?.source?.kind;
+  if (kind === NOTICE_SOURCE_KIND || kind === CONVERTED_SOURCE_KIND) return true;
+  // Pre-0.2.2 Harness sessions still hold the legacy wrapper.
+  return kind === "plugin" && message.source.plugin === PLUGIN_NAME;
 }
 
 /**

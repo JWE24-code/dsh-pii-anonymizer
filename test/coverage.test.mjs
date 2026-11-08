@@ -11,10 +11,12 @@ import {
   loadOrCreateKey,
 } from "../src/anonymizer.mjs";
 import {
+  NOTICE_SOURCE_KIND,
   PLUGIN_NAME,
   anonymizeAssembly,
   anonymizePostExecuteDecision,
   anonymizePreStepDecision,
+  isOwnMessage,
   renderNotice,
 } from "../src/hooks.mjs";
 
@@ -142,13 +144,26 @@ test("pre-step leaves a reject decision and its own notice untouched", () => {
   const p = new PiiPseudonymizer({ key: KEY });
   const reject = { kind: "reject", reason: "x" };
   assert.equal(anonymizePreStepDecision(reject, p).decision, reject);
-  const own = {
-    role: "user",
-    content: text("1 EMAIL"),
-    source: { kind: "plugin", plugin: PLUGIN_NAME, form: "notice" },
-  };
-  const decision = { kind: "enter", messages: [own] };
-  assert.equal(anonymizePreStepDecision(decision, p).decision, decision);
+  // Current (Harness 0.2.2+), v3→v4-converted, and legacy notice sources.
+  for (const source of [
+    { kind: NOTICE_SOURCE_KIND, form: "notice" },
+    { kind: `plugin:${PLUGIN_NAME}`, form: "notice" },
+    { kind: "plugin", plugin: PLUGIN_NAME, form: "notice" },
+  ]) {
+    const own = { role: "user", content: text(`1 EMAIL ${EMAIL}`), source };
+    const decision = { kind: "enter", messages: [own] };
+    assert.equal(anonymizePreStepDecision(decision, p).decision, decision);
+  }
+});
+
+test("notice source carries a producer-owned kind (session format v4)", () => {
+  // Harness 0.2.2 refuses a missing/empty kind and the retired "plugin" wrapper.
+  assert.equal(typeof NOTICE_SOURCE_KIND, "string");
+  assert.ok(NOTICE_SOURCE_KIND.length > 0);
+  assert.notEqual(NOTICE_SOURCE_KIND, "plugin");
+  assert.ok(isOwnMessage({ source: { kind: NOTICE_SOURCE_KIND } }));
+  assert.ok(!isOwnMessage({ source: { kind: "plugin", plugin: "other" } }));
+  assert.ok(!isOwnMessage({ source: { kind: "user" } }));
 });
 
 test("anonymizeMessage returns the same object when nothing matched", () => {

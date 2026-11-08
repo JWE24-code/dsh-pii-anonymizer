@@ -26,6 +26,7 @@ import z from "@deepseek-ai/schemastery";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { PiiPseudonymizer, defaultKeyPath, loadOrCreateKey } from "./anonymizer.mjs";
 import {
+  NOTICE_SOURCE_KIND,
   PLUGIN_NAME,
   anonymizeAssembly,
   anonymizePostExecuteDecision,
@@ -138,7 +139,7 @@ export function apply(ctx, config) {
           ...decision.messages,
           createUserMessage({
             content: [{ type: "text", text: summary }],
-            source: { kind: "plugin", plugin: PLUGIN_NAME, form: "notice", summary },
+            source: { kind: NOTICE_SOURCE_KIND, form: "notice", summary },
           }),
         ],
       };
